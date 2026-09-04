@@ -5,13 +5,18 @@ description: Slice a Figma design into a Lumos for Astro page in ONE pass — la
 
 # Slicing a design in one shot
 
-Three skills already exist under this one and are not repeated here:
+Two skills sit under this one and are not repeated here:
 
-| Skill                  | Owns                                               |
-| ---------------------- | -------------------------------------------------- |
-| `figma-design-to-code` | how to talk to the Figma MCP                       |
-| `lumos-import-figma`   | measurements → tokens, and `convert.mjs`           |
-| `lumos-slice-figma`    | the overlay loop, and what 1:1 can and cannot mean |
+| Skill                  | Owns                                     |
+| ---------------------- | ---------------------------------------- |
+| `figma-design-to-code` | how to talk to the Figma MCP             |
+| `lumos-import-figma`   | measurements → tokens, and `convert.mjs` |
+
+`lumos-import-figma` ships with every Lumos for Astro scaffold. The overlay
+does **not** — so this skill carries its own `overlay-figma.mjs` and works in a
+bare project. Where a project also has a `lumos-slice-figma` folder, that copy
+is the older one: run the scripts next to this file, and read that `SKILL.md`
+only for its long-form argument about what 1:1 can and cannot mean.
 
 This one owns what none of them do: **finishing a section in all six domains at
 once, and proving each one with a tool instead of a claim.** Read
@@ -42,23 +47,21 @@ pass":
 | Page integrity                   | no sideways scroll at any width                                                                  | `probe.mjs overflow`                                                              |
 | Types and build                  | the project's own gates                                                                          | `npx astro check`, `npx astro build`                                              |
 
-The paths below assume both skills sit in the project's own
-`.claude/skills/`, which is where a scaffolded Lumos project already puts
-`lumos-slice-figma`. Installed at user level instead, resolve this skill's
-script against **this file's own directory** — set
-`SKILL=~/.claude/skills/stacki-lumos-slicing` and call `$SKILL/probe.mjs`.
-Never guess a path: a missing script reads as a passing check to nobody, but a
-wrong path costs a debugging detour every time.
+**Both scripts live next to this file**, so resolve them against this skill's
+own directory, never against the project — the skill is normally installed once
+at user level and shared by every project:
 
 ```bash
+SKILL=~/.claude/skills/stacki-lumos-slicing   # or .claude/skills/… if vendored
+
 # looks right
-node .claude/skills/lumos-slice-figma/overlay-figma.mjs \
+node $SKILL/overlay-figma.mjs \
   --ref design/06-reviews.png --route / --width 1440 --selector "#reviews" --reduce
 
 # behaves right
-node .claude/skills/stacki-lumos-slicing/probe.mjs drag --selector "#reviews" --width 375
-node .claude/skills/stacki-lumos-slicing/probe.mjs overflow
-node .claude/skills/stacki-lumos-slicing/probe.mjs eval --width 1440 --file /tmp/read-header.js
+node $SKILL/probe.mjs drag --selector "#reviews" --width 375
+node $SKILL/probe.mjs overflow
+node $SKILL/probe.mjs eval --width 1440 --file /tmp/read-header.js
 ```
 
 Both instruments exit non-zero while the page is wrong, so both can gate a

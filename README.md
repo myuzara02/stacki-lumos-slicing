@@ -10,11 +10,11 @@ So the rule the skill is built around is:
 
 ## What is in here
 
-| File | What it is |
-| --- | --- |
-| `SKILL.md` | the workflow: order of operations, the six domains and their proofs, non-negotiables, how to divide the work across agents, the report format |
+| File                   | What it is                                                                                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SKILL.md`             | the workflow: order of operations, the six domains and their proofs, non-negotiables, how to divide the work across agents, the report format |
 | `reference/lessons.md` | the catalogue: every fault that produced a wrong page from correct-looking source, as symptom → cause → fix, with the number that revealed it |
-| `probe.mjs` | the behaviour instrument — real touch gestures, a sideways-overflow sweep, and arbitrary page reads at a given viewport |
+| `probe.mjs`            | the behaviour instrument — real touch gestures, a sideways-overflow sweep, and arbitrary page reads at a given viewport                       |
 
 ## Install
 
@@ -34,7 +34,7 @@ Then add a line to the project's `AGENTS.md` / `CLAUDE.md` skills list so it is 
 - **Node 22+** — `probe.mjs` uses the global `WebSocket` and `fetch`, and has **no dependencies**.
 - **Chrome, Chromium or Edge** installed. The script drives a headless instance over CDP.
 - A **dev server running** on `http://localhost:4321` (override with `LUMOS_BASE`).
-- The bundled Lumos skills, which this one orchestrates rather than duplicates: `lumos-import-figma` (measurements → tokens, `convert.mjs`) and `lumos-slice-figma` (the overlay loop and `overlay-figma.mjs`). `SKILL.md` calls `overlay-figma.mjs` at its original path so there is never a second copy to drift.
+- The bundled Lumos skills, which this one orchestrates rather than duplicates: `lumos-import-figma` (measurements → tokens, `convert.mjs`) and `lumos-import-figma` (measurements → tokens, `convert.mjs`), which ships with every Lumos for Astro scaffold. The overlay does not ship with the scaffold, so `overlay-figma.mjs` lives here and the skill works in a bare project.
 
 ## probe.mjs
 
