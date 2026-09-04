@@ -484,7 +484,7 @@ async function evalCmd(opts) {
 
 const [cmd] = process.argv.slice(2);
 const opts = args(process.argv.slice(3));
-if (opts.help || !cmd) {
+if (opts.help || !cmd || cmd === "--help" || cmd === "-h") {
   console.log(
     readFileSync(new URL(import.meta.url))
       .toString()
