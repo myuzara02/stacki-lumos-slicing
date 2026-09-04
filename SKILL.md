@@ -42,6 +42,14 @@ pass":
 | Page integrity                   | no sideways scroll at any width                                                                  | `probe.mjs overflow`                                                              |
 | Types and build                  | the project's own gates                                                                          | `npx astro check`, `npx astro build`                                              |
 
+The paths below assume both skills sit in the project's own
+`.claude/skills/`, which is where a scaffolded Lumos project already puts
+`lumos-slice-figma`. Installed at user level instead, resolve this skill's
+script against **this file's own directory** — set
+`SKILL=~/.claude/skills/stacki-lumos-slicing` and call `$SKILL/probe.mjs`.
+Never guess a path: a missing script reads as a passing check to nobody, but a
+wrong path costs a debugging detour every time.
+
 ```bash
 # looks right
 node .claude/skills/lumos-slice-figma/overlay-figma.mjs \
