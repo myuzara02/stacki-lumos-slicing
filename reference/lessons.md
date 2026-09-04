@@ -46,6 +46,19 @@ found them was measurement.
 - **`--nav-height` guessed rather than read.** The frame draws a 48 row with 24
   above it; the token said 5rem. 4.5rem. Read the row, do not eyeball the bar.
 
+- **The leading-trim pseudos are not free once the trim is zero.** On a frame
+  whose gaps are all measured between full line boxes, the trim has nothing to
+  remove, so `--primary-trim-*: 0.5lh` cancels it — and the rule's own
+  `::before`/`::after` then do two kinds of damage on their own. A
+  `display: table` `::before` **is** the element's first baseline, so
+  `align-items: baseline` in a section head aligned the button to a phantom
+  baseline at y=0 and pushed the 48px title **16px down**, taking the whole
+  1127-tall section with it (overlay 24.64% → 11.69% once removed). And inside
+  a flex or grid parent both pseudos become items: a 296-wide footer social row
+  measured **347.61**. If the trim is a no-op, delete the rule, do not just
+  neutralise its tokens — and never put a `text-style-*` class on a flex or
+  grid container.
+
 ---
 
 ## Layout and styling
@@ -57,6 +70,25 @@ found them was measurement.
   7.52% → 6.22%). Size the image, let the window clip, and add `max-width: none`
   where the image is deliberately wider than its block.
 
+- **A percentage height inside an `aspect-ratio` window is indefinite.** The
+  crop pattern written as `.media { aspect-ratio: 306 / 220 }` +
+  `img { width: 100%; height: 100% }` holds only while the photo is *wider*
+  than the window. One of four exported cards was portrait (1600×2397): its
+  `height: 100%` resolved against an auto height, the image's own ratio won,
+  and `min-height: auto` let the content overrule the ratio — the media box
+  rendered **458.4 instead of 220** and the card grew 238 too tall (music
+  overlay 15.34% → 7.63%). Make the height definite: `position: relative` on
+  the window, `position: absolute; inset: 0` on the image. Check the intrinsic
+  orientation of **every** export, not the first one.
+
+- **`text-wrap: balance` / `pretty` versus a Figma line break.** Figma wraps
+  greedily. Lumos ships `balance` on every heading and `pretty` on body text,
+  and both move a word between lines: rail titles broke a word early, a
+  four-line 36px feature title put "back to" on the wrong line, and three
+  196-wide date columns each wrapped differently from the frame. A wrong line
+  break is a real difference, not antialiasing — set every `--*-text-wrap` to
+  `normal` when the frame is the reference, and say so in the report.
+
 - **A CSS `border` for a Figma stroke.** A Figma stroke draws _inside_ the
   frame; a `border` adds its width to the box. Cost: **1px per row, 9px of
   drift** down a five-row table. `box-shadow: inset 0 0 0 <w>` draws inside and
@@ -65,6 +97,46 @@ found them was measurement.
 - **`display: inline-block` on a stacked link.** Brings the line box's
   descender with it — about **3px per row, 12px per footer column**. Use
   `display: block` or a flex parent.
+
+- **A scroll row bled at one end only.** The frame draws the music row running
+  off the right edge, so the slice gave it `margin-inline-end: -site-margin`
+  and nothing else. At every width the row then started 20 in from the glass
+  and ended flush against it: `startInset 0 / endInset 0` against a container
+  inset of 20–72. A reader on a phone reads that as a broken slider. The fix is
+  three lines on the scroller — bleed both edges, `padding-inline` of the site
+  margin, and `scroll-padding-inline` to match so every snap lands on that
+  line — and at 1440 the padded scrollport is exactly the frame's 1368 track,
+  so the desktop geometry does not move. Measured after: 23/22 at 375, 41/41
+  at 768, 53/52 at 1024, on all three rows of the page.
+
+- **A hover `scale` paints over its own scrim.** `scale: 1.03` on a photo puts
+  it in the transformed paint layer, which sits above every un-layered sibling
+  in the same stacking context — so the gradient under the headline vanished
+  for exactly as long as the pointer was on the card, and only there. Nothing
+  in the source reads wrong: the scrim is still a grid item in "stack", still
+  painted, just underneath. Give the photo `z-index: 0`, the scrim `1`, the
+  body `2`. `probe.mjs proportions` now reads the `:hover` rules out of the
+  stylesheets and names any transformed element whose un-layered sibling
+  carries a gradient.
+
+- **A separator drawn with `border-inline-start` + a `gap`.** In a 2-column
+  facts strip the vertical rule then sits at the far side of the gutter rather
+  than on the midpoint, and the row-2 rule stops at each cell's edge, leaving a
+  gap in the middle of a line that should be continuous. Zero the gap and put
+  the padding on the cells: the rule lands on the grid line, and the
+  horizontal one runs unbroken because the cells abut.
+
+- **A wordmark sized in `vw` alone.** `min(17.5rem, 55vw)` is 206 wide on a
+  375 screen — a poster, not a masthead, once a toggle and a search row sit
+  under it. `min(10.5rem, 40vw)` = 150 at 375 and 128 at 320. Cap in both
+  units and look at 320, where only the `vw` term is doing anything.
+
+- **Type sizes came from the frame; tap targets did not.** Footer and nav links
+  measured **21–35px tall** at every width below the stack point, because the
+  frame's 33 pitch is a desktop column and the 45 nav row was padding on the
+  row rather than on the link. Move the row's padding onto the link and give
+  stacked links `min-height: var(--control-height-small)`: the frame's geometry
+  is unchanged and the box a thumb hits is 40–45 instead of 21.
 
 - **Type-scale block margins inside a flex item or table cell.** `--*-margin-*`
   still apply where no margin collapsing saves you, and add tens of px nobody
@@ -189,6 +261,95 @@ false` removes the _damping_, not the travel — the row could then be dragged
 
 - **Kill ScrollTriggers on `astro:before-swap`.**
 
+- **A duplicate-label button clips at the LABEL, not at the button.** The
+  pattern is a `text-shadow` copy one travel below the real glyphs, revealed
+  by translating the text inside a clipping box. Clip on the control and the
+  copy is visible at rest: a `large` button is 56 tall around a 12 line, so 22
+  of empty padding sits under the label and a 24 travel showed 10 of ghost
+  text in it — reported by the reader, invisible in the source. Wrap the label
+  in its own `height: 1lh; overflow: clip` window and travel exactly `1lh`:
+  the reveal is then the same at 40, 44 and 56 tall, and the variant that has
+  no duplicate (a text link) has to opt out of the window or it loses its
+  descenders.
+
+- **A `0fr → 1fr` panel needs three things to be true, and `visibility:
+hidden` hides the fact that they are not.** The reader's report was "the
+  links are still there when the hamburger closes". Measured, closed, at 375:
+  the row was **1** tall and the list was **426**, hanging out of a
+  `z-index: 100` header — invisible only because the panel carried
+  `visibility: hidden`. Fixing it took three passes, each of which the
+  instrument had to catch separately:
+  1. **The clip has to be on the box that shrinks.** It was on the inner,
+     which clips the inner's children and says nothing about the inner.
+  2. **A grid item's automatic minimum is its content**, so with the row at 0
+     the item still stood at 426. `min-height: 0`.
+  3. **`align-items` from a wrapper pattern kills the stretch.** The panel sat
+     in Lumos's `container` (`align-items: start`), so it was never stretched
+     to its row and took its content height — and later, in flex, its width
+     collapsed to the widest label and the rules between the links stopped a
+     third of the way across. `align-self: stretch; width: 100%`.
+
+  Even with all three, the header's box resolved **a frame behind** the track
+  it contained: box **345.3** around a row of **278.4**, which the reader saw
+  as an empty strip with two links left in it. The version that holds is the
+  boring one: **transition a height the script measures** (`--_panel` written
+  from the list's own `offsetHeight`, re-read on resize and on
+  `document.fonts.ready`), with the clip on the panel and the no-JS path
+  opening it outright. After: closed row 1 / panel 0, open 427 / 426,
+  mid-close box and content agree to within the 1px border, and the nine links
+  stay out of the tab order at every step.
+
+  The generalisation worth keeping: **`visibility: hidden`, `opacity: 0` and
+  `overflow` are concealment, not collapse.** When a panel is meant to be
+  closed, measure the box — `menuH`, the panel's own height, and the first
+  link's rect — and only then believe it. Three separate reads in one frame,
+  because during a transition each read advances the clock.
+
+- **A sticky header that collapses in place reflows the whole page.** The
+  condensed-header pattern written as a class on the sticky element — smaller
+  padding, hidden rows, smaller wordmark — shrinks a box that is still IN
+  FLOW, so every section below it jumps up by the difference the moment the
+  class lands: measured 239.9 → 116, i.e. **124px** of upward jump mid-scroll,
+  which the overlay caught as **120px** of offset on a section eight screens
+  down and 8–17% of extra difference on five others. The version that moves
+  nothing is a negative sticky offset: `top: calc(var(--_masthead) * -1)` with
+  the masthead's height measured into that property by a `ResizeObserver`. The
+  header then keeps its full height at the top of the page and simply hangs
+  higher once pinned. Verified: the hero's document offset stayed 240 at every
+  scroll position, the pinned band read `menuTop 0` on the way up, and
+  `elementFromPoint(x, 4)` returned a nav link.
+
+- **A marquee answers none of the drag questions.** `drag` asked a
+  self-running row whether its last item lands flush and whether it comes
+  back, and reported `-949px` against a row that is *meant* to be longer than
+  the window forever. It also could not find the row at all: the mover
+  heuristic read only `transform`, while a CSS marquee animates the
+  independent `translate` property, and the track sits under two single-child
+  wrappers (viewport > track > panel) whose depth changes under reduced motion
+  because the duplicate panel is `display: none`. Now: `translate` counts as
+  movement, the item line is found by walking down through single-child
+  wrappers, and a row with a running animation is judged only on *does it
+  travel* and *does a thumb over it still scroll the page*.
+
+- **A retracting header's reduced-motion escape has to match the retract's own
+   selector.** The retract needs a guard so it never fires while a mobile
+  panel is open — `body:not(:has(.nav_toggle[aria-expanded="true"]))
+.nav_wrap.is-hidden` — and the `prefers-reduced-motion` override written as
+  the plain `.nav_wrap.is-hidden` then loses on specificity: measured `navTop
+-252` under `--reduce`, i.e. the bar still left. Write the escape on the same
+  shape, and skip creating the trigger in the script as well. After: `navTop 0`
+  at every scroll position under `--reduce`, `-252 → 0` without it.
+
+- **Smooth scrolling is proved by interpolation, not by a class name.** Lenis
+  writes `lenis` on `html` as soon as it is constructed, so a `classList` check
+  says nothing about whether the page actually eases. Dispatch a real
+  `Input.dispatchMouseEvent` wheel and sample `scrollY` across frames:
+  `0 → 150 → 216 → 249 → 277 → 294 → 304 → 310 → 314` toward a 320 target is
+  interpolation; a single jump to 320 is not. The same wheel proves the
+  direction watcher, because `ScrollTrigger` is reading Lenis rather than the
+  native scroll: `navTop 0 → -252` down, `→ 0` up, at 1440 with Lenis and at
+  375 without it.
+
 ---
 
 ## The instruments
@@ -201,6 +362,62 @@ the page. Every phantom below was real here and is now handled.
   into a 10,000px hero and shifts everything under it. One section read
   **93.40%** differing for this reason alone. `overlay-figma.mjs` tiles through
   a normal viewport and stitches.
+
+- **`drag` aimed at the viewport, not at the row — and walked the finger off
+  screen.** Two faults in one command, both of which report a working native
+  scroll row as dead. The finger landed at a fixed `0.6 × height`: with
+  `--selector` on a tall section at 375 the row measured **876..1182 in an 812
+  window**, so the touch hit the section above it and nothing moved. And
+  `--distance` defaults to `2.5 × width`, so an unclamped stroke walked the
+  point to **x = -618** in a 375 window; a library reading its own deltas still
+  follows that, but the browser's own scroller gets nothing. Both are fixed:
+  the run scrolls the discovered mover to the middle of the window, aims at its
+  centre, clamps every touch point inside the viewport, and prints
+  `finger y=… (row top..bottom)` plus `scrollLeft` so a miss is visible in the
+  first line. After the fix the same row read `scrollLeft 0 → 316 → 633 → 897`
+  with the last card flush (`empty right 0`) and a vertical swipe still
+  scrolling the page — the page had been correct all along.
+
+- **A native scroller cannot be proved with synthetic JS touch events.** A
+  `page.dispatchEvent(new TouchEvent(...))` never reaches the compositor, so it
+  can only exercise a JS handler. Either drive `Input.dispatchTouchEvent`
+  through CDP with touch emulation on (what `drag` does) or say the domain is
+  unproved — a `querySelector` on `overflow-x: auto` is not a gesture.
+
+- **A capture taken while the page reveals itself measures nothing.** A slice
+  with a body fade-in and `slide-up` reveals read **ticker 86.70%** and put the
+  footer **66px** out, and every mid-page section about 1% worse, purely
+  because the tiles were captured mid-tween — and because a block that has not
+  been scrolled past yet is still fully transparent, so it never settles at
+  all. Waiting does not fix the second half. The capture now forces the
+  resting state the frame actually draws: `body { opacity: 1 !important }` and
+  `[data-scroll-animation] { opacity: 1; transform/translate/scale: none }`,
+  all `!important`, for the length of the read.
+
+- **A sticky header is as much of a phantom as a fixed one.** The old filter
+  named `.nav_wrap.overlap` and `[class*=fixed]`, so a `position: sticky`
+  header passed it, stayed in flow — and painted its whole 252 band across
+  every mid-page tile: footer **33px** of false offset, three sections ~3%
+  worse. Hidden by computed position now (`sticky` or `fixed` with a top edge
+  above 8), never the element being measured, and only for frames that are not
+  the top of the page.
+
+- **Every synthetic gesture has to fit the window, in both axes.** Three
+  separate false faults came from a finger leaving the viewport: a horizontal
+  stroke walking to `x = -618`, a return stroke born inside Chrome's left-edge
+  back-navigation zone, and the vertical "does the page still scroll through
+  this row" check travelling a fixed 320px up from a 40-tall strip that sits
+  near the top — `y = -10`, points dropped, `pageY 1307 → 1307`, and a
+  perfectly good ticker reported as eating the gesture. `drag` now clamps
+  every point, starts return strokes at mid-screen, and swipes whichever
+  vertical direction has room, judging the page's movement in that direction.
+
+- **A bleeding row's own padding is not a fault.** The flush check compared the
+  last item against the window and called a fixed row broken: a scroller that
+  bleeds the container carries the site margin as `padding-inline`, so its last
+  item is supposed to stop 20–72 short. `emptyRight` is now judged against the
+  row's own right edge plus its `padding-inline-end` — otherwise the fix for a
+  lopsided row reads as a new bug the moment it lands.
 
 - **The dev toolbar and a pinned nav are not the page.** Both paint into every
   tile whose crop reaches them: the toolbar as a 48px band at the bottom, the
@@ -262,3 +479,18 @@ the page. Every phantom below was real here and is now handled.
 - **Never claim a domain is verified with the wrong kind of check.** "Swiper is
   initialised, cards are 292, pitch is 316" was true and useless. The claim
   must exercise the thing the user does.
+
+- **A green sweep at the only width the file supplies proves nothing about the
+  others.** On the Reader slice every instrument passed — twelve overlays at
+  1440 within 0–3px, overflow clean at eleven widths, three drag probes sound,
+  every form and the nav toggle read out of the live page — and the reader
+  still found five faults on a phone: a 500-tall photo, a row inset at one end,
+  a rule off the midpoint, a 206-wide wordmark, a scrim that vanished on hover.
+  All five sat in the gap between the instruments: the overlay had no mobile
+  frame to compare against, `overflow` only asks whether the page scrolls
+  sideways, and `drag` only asks whether a row moves. The narrow widths were
+  reviewed by eye, from section screenshots, which is exactly the "source reads
+  correctly" mistake in visual form. **Where the design supplies no frame, the
+  proof has to be a rule with a number, not a look** — that is what
+  `probe.mjs proportions` and the SKILL's "The width the design never drew"
+  ruleset are for. Run it in the same loop as the overlay, not after a report.

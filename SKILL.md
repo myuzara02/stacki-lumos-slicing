@@ -35,8 +35,8 @@ the right card width and pitch, and did not move for a finger. An announcement
 bar whose token said 40 and whose box was 43.6. A page whose `body` clipped
 sideways overflow and whose `html` scrolled it anyway.
 
-Six domains, six proofs. Nothing here is optional, and none of it is "a later
-pass":
+Seven domains, seven proofs. Nothing here is optional, and none of it is "a
+later pass":
 
 | Domain                           | Proof                                                                                            | Command                                                                           |
 | -------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
@@ -46,6 +46,7 @@ pass":
 | Functionality — state            | the state read out of the page at each state, both widths                                        | `probe.mjs eval --expr …`                                                         |
 | Page integrity                   | no sideways scroll at any width                                                                  | `probe.mjs overflow`                                                              |
 | Types and build                  | the project's own gates                                                                          | `npx astro check`, `npx astro build`                                              |
+| Proportion at the widths the file never drew | every crop window holds its ratio, both ends of a scroll row match, no photo owns the screen, every control is thumb-sized | `probe.mjs proportions` |
 
 **Both scripts live next to this file**, so resolve them against this skill's
 own directory, never against the project — the skill is normally installed once
@@ -62,6 +63,7 @@ node $SKILL/overlay-figma.mjs \
 node $SKILL/probe.mjs drag --selector "#reviews" --width 375
 node $SKILL/probe.mjs overflow
 node $SKILL/probe.mjs eval --width 1440 --file /tmp/read-header.js
+node $SKILL/probe.mjs proportions --widths 1024,834,768,640,480,375,320
 ```
 
 Both instruments exit non-zero while the page is wrong, so both can gate a
@@ -113,6 +115,49 @@ costs three times what it should and still ships broken.
    other. Say so with both numbers and ask. Never nudge a token to close a
    picture: that trades one visible mismatch for an invisible one everywhere
    else the token is used.
+
+## The width the design never drew
+
+Most files supply one frame. Everything below it is then **our** design, and
+the overlay cannot judge it — there is nothing to overlay against. That is not
+permission to improvise: five faults shipped past a green overlay sweep on the
+Reader slice, every one of them at a width nobody drew, and every one of them a
+number. So the narrow widths get their own rules and their own instrument
+(`probe.mjs proportions`), run at 1024, 834, 768, 640, 480, 375 and 320.
+
+- **A photo takes at most 60% of the window.** The frame's crop is a ratio at
+  ONE width. At container width on a phone the same ratio is half a screen: a
+  421×560 pick stood 500 tall at 375 and 498 at 834. Change the ratio per band
+  (3:2 below 48rem, 16:9 below 64rem, the frame's own above), never the height.
+- **A crop window needs a definite height.** `aspect-ratio` on the window plus
+  `height: 100%` on the image is indefinite, the photo's ratio wins, and the
+  window stops cropping — 458 instead of 220 on a portrait export, 220 instead
+  of 185 on a 3:2 one. `position: relative` + `inset: 0` on the image, always,
+  and re-check at every width because the window's ratio changes per band.
+- **Both ends of a scroll row match.** A row that bleeds needs
+  `padding-inline` of the site margin AND `scroll-padding-inline` to match, or
+  it reads inset at the start and glued to the glass at the end. A row that
+  stays inside the container must not bleed at one end only. Measure both
+  insets at both scroll extremes; they are equal or the row is lopsided.
+- **A rule belongs on the grid line, not in the gutter.** A separator drawn as
+  `border-inline-start` + a `gap` sits at the far side of the gutter and its
+  horizontal partner stops at each cell's edge. Zero the gap and pad the cells:
+  the rule then lands on the midpoint and runs unbroken.
+- **Type from the frame is a desktop size, tap targets are not.** A 21-tall
+  link is fine with a mouse and a miss with a thumb. Below the stack point give
+  every link its own `min-height: var(--control-height-small)`; on a nav row,
+  move the row's own padding onto the link so the 45 the frame draws IS the
+  tap box.
+- **A brand mark is not a poster.** A wordmark at `55vw` is 206 wide on a 375
+  screen. Cap it in `rem` and in `vw` — `min(10.5rem, 40vw)` — and check it at
+  320, where the ceiling stops mattering.
+- **A hover transform outranks an un-layered sibling.** `scale` on a photo
+  moves it into the transformed paint layer, above its own scrim: the overlay
+  vanishes exactly while the reader is looking at it. Give the photo, the scrim
+  and the body explicit `z-index`es.
+- **Prose keeps a measure.** The frame's widest column is a measure too (856
+  at 18px ≈ 95ch). A block that fills the container at 1024 runs past it —
+  cap it in `ch` at the stack point.
 
 ## Non-negotiables
 

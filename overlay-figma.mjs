@@ -278,8 +278,35 @@ async function capture() {
       hide.textContent = [
         "astro-dev-toolbar, #dev-toolbar-root, [data-astro-dev-toolbar] { display: none !important; }",
         ${hideNav ? '".header_wrap, .nav_wrap.overlap, .nav_wrap[class*=fixed] { display: none !important; }"' : '""'},
+        /* A page that fades itself in and reveals that slide their blocks up
+           are both MID-ANIMATION while a tile is captured — and a block that
+           has not been scrolled past yet is still fully transparent.
+           Measured: the ticker read 86.70% and the footer landed 66px out
+           purely from this. The frame draws the resting state, so the capture
+           pins the resting state: the reveal's own end values, forced, for
+           the length of the read — the same reason --reduce exists. */
+        "body { opacity: 1 !important; }",
+        "[data-scroll-animation] { opacity: 1 !important; transform: none !important; translate: none !important; rotate: none !important; scale: none !important; }",
       ].join("");
       document.head.append(hide);
+      /* A STICKY header is as much of a phantom as a fixed one: it stays in
+         flow, so it passes the class-name filter above, and then paints its
+         whole band across every mid-page tile — measured, it cost the footer
+         33px of false offset and every mid-page section about 3%. Hidden by
+         computed position rather than by name, for the frames that are not
+         the top of the page. */
+      ${
+        hideNav
+          ? `const measured = document.querySelector(${JSON.stringify(opts.selector || "#__no_selector__")});
+      for (const el of document.querySelectorAll("body > *, body > * > *")) {
+        if (measured && (el === measured || el.contains(measured) || measured.contains(el))) continue;
+        const cs = getComputedStyle(el);
+        if ((cs.position === "sticky" || cs.position === "fixed") && el.getBoundingClientRect().top < 8) {
+          el.style.setProperty("visibility", "hidden", "important");
+        }
+      }`
+          : ""
+      }
       window.scrollTo(0, document.body.scrollHeight);
       await new Promise(r => setTimeout(r, 500));
       window.scrollTo(0, 0);

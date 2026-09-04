@@ -9,7 +9,7 @@
  * passed. What caught them was real input through the browser, so that is
  * what this script sends.
  *
- * Three commands, because three questions kept coming back:
+ * Four commands, because four questions kept coming back:
  *
  *   overflow  Can the page be scrolled sideways at any width, and if so, who
  *             is sticking out? `body { overflow-x: clip }` alone does NOT
@@ -27,6 +27,15 @@
  *             what it returns. The general case: header states at two scroll
  *             positions, a drawer opening, a form's validity, a video's
  *             readyState. Measure, do not assume.
+ *
+ *   proportions
+ *             The width the design never drew. Every fault below was reported
+ *             by a reader on a phone after a slice had passed the overlay at
+ *             1440: a photo half a screen tall, a scroll row inset at one end
+ *             and glued to the glass at the other, a rule sitting at the far
+ *             side of a gutter, a wordmark at 55vw, a scrim that vanished
+ *             under a hover transform. None of them are visible in a still at
+ *             the one width the file supplies, and all of them are numbers.
  *
  * Headless Chrome over CDP, no dependencies.
  *
@@ -46,6 +55,10 @@
  *   --items <css>      drag: the things that move. Default: the moving box's children.
  *   --distance <px>    drag: how far one drag travels. Default 2.5x the width.
  *   --repeat <n>       drag: drags per direction. Default 3.
+ *   --widths <list>    proportions: widths to audit. Default 1024,834,768,640,480,375,320.
+ *   --tall <ratio>     proportions: media taller than this share of the window fails. Default 0.6.
+ *   --measure <ch>     proportions: text wider than this many characters fails. Default 100 — the frame's own widest measure is 95ch.
+ *   --tap <px>         proportions: interactive box smaller than this fails. Default 40.
  *   --reduce           Emulate `prefers-reduced-motion: reduce`.
  *   --expr <js>        eval: an async function expression, e.g. "async () => ({})".
  *   --file <path>      eval: the same, read from a file.
@@ -301,6 +314,18 @@ const geometry = (selector, items) => `() => {
   const sec = document.querySelector(${JSON.stringify(selector)});
   if (!sec) throw new Error("no element matches " + ${JSON.stringify(selector)});
   const kids = (el) => [...el.children].filter((c) => c.getBoundingClientRect().width > 0);
+  /* A scroller whose whole content is one track has a single child, and one
+     item tells you nothing about where the row starts and ends. Walk down
+     through every single-child wrapper until a real line of items appears —
+     a marquee is viewport > track > panel > items, and under reduced motion
+     its duplicate panel is display:none, so the depth is not fixed. */
+  const line = (el) => {
+    let own = kids(el);
+    for (let i = 0; i < 4 && own.length === 1 && kids(own[0]).length; i++) {
+      own = kids(own[0]);
+    }
+    return own;
+  };
   /* The row is the widest thing that either overflows its own box, carries a
      transform, or is scrolled — and that has a line of visible children to
      measure. Anything else in the section (a wrapper, a hidden node, an SVG)
@@ -308,16 +333,22 @@ const geometry = (selector, items) => `() => {
      hold at once. */
   let mover = null, best = 0;
   for (const el of [sec, ...sec.querySelectorAll("*")]) {
-    const items = kids(el);
+    const items = line(el);
     if (items.length < 2) continue;
-    const tx = Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).m41);
+    /* A transform is not the only way a row moves: a CSS marquee animates the
+       independent translate property, whose matrix never appears in the
+       transform, and the row then reads as motionless. Count both. */
+    const cs = getComputedStyle(el);
+    const tx =
+      Math.abs(new DOMMatrixReadOnly(cs.transform).m41) ||
+      Math.abs(parseFloat(cs.translate) || 0);
     const overflowing = el.scrollWidth - el.clientWidth > 8 || tx > 0 || el.scrollLeft > 0;
     if (!overflowing) continue;
     const extent = items.at(-1).getBoundingClientRect().right - items[0].getBoundingClientRect().left;
     if (extent > best) { best = extent; mover = el; }
   }
   if (!mover) throw new Error("nothing in " + ${JSON.stringify(selector)} + " moves sideways — is this the right section?");
-  const list = ${items ? `[...document.querySelectorAll(${JSON.stringify(items)})].filter((c) => c.getBoundingClientRect().width > 0)` : "kids(mover)"};
+  const list = ${items ? `[...document.querySelectorAll(${JSON.stringify(items)})].filter((c) => c.getBoundingClientRect().width > 0)` : "line(mover)"};
   const first = list[0].getBoundingClientRect();
   const last = list[list.length - 1].getBoundingClientRect();
   return {
@@ -330,6 +361,30 @@ const geometry = (selector, items) => `() => {
     scrollY: Math.round(window.scrollY),
     scrollLeft: Math.round(mover.scrollLeft),
     tx: Math.round(new DOMMatrixReadOnly(getComputedStyle(mover).transform).m41),
+    /* A row that drives ITSELF — a marquee looping on a CSS animation — is a
+       different contract: it is meant to be longer than the window forever,
+       so "does the last item land flush" and "does it come back" are not
+       questions about it. Reported so the verdicts can say so instead of
+       inventing a fault. */
+    animated: [mover, ...mover.querySelectorAll("*")].some(
+      (el) => getComputedStyle(el).animationName !== "none",
+    ),
+    /* A bleeding row carries the site margin as its own padding, so its last
+       item is supposed to stop that far short of the row's edge. Without this
+       the fix for a lopsided row reads as a new fault. */
+    padEnd: Math.round(parseFloat(getComputedStyle(mover).paddingInlineEnd) || 0),
+    /* Where the finger has to land. A fixed fraction of the viewport misses:
+       a 305-tall row positioned at 20% of an 812 window ends at 467, and
+       0.6 × 812 = 487 is 20px BELOW it, so the drag lands on the section and
+       the row is reported dead while a real finger moves it fine. */
+    moverTop: Math.round(mover.getBoundingClientRect().top),
+    moverHeight: Math.round(mover.getBoundingClientRect().height),
+    /* How far the row's own right edge sits from the window's. A bleeding row
+       reads 0 and must end flush with the window; a row that stays inside the
+       container reads the site margin, and its last item is supposed to stop
+       there. Without this the flush check calls every contained scroller
+       broken and every one of them a rubber-band. */
+    insetRight: Math.round(innerWidth - mover.getBoundingClientRect().right),
   };
 }`;
 
@@ -351,8 +406,12 @@ async function drag(opts) {
     reduce: opts.reduce,
   });
 
-  /* Put the row in the middle of the window rather than at the top: a finger
-     landing on a sticky bar drags the bar, and the report blames the row. */
+  /* Put the ROW in the middle of the window — not the section's top. A finger
+     landing on a sticky bar drags the bar, and a finger landing on the section
+     above the row touches nothing that moves: with `--selector` on a tall
+     section the row can sit 876..1182 in an 812 window, entirely off screen,
+     and the run reports a working row as dead. So: scroll the section into
+     view, find the mover, then correct by the mover's own offset. */
   await evaluate(
     call,
     `async () => {
@@ -365,19 +424,51 @@ async function drag(opts) {
   );
 
   const at = async () => evaluate(call, read);
-  const y = Math.round(height * 0.6);
+
+  let aim = await at();
+  const centre = aim.moverTop + Math.round(aim.moverHeight / 2);
+  if (centre < 8 || centre > height - 8) {
+    await evaluate(
+      call,
+      `async () => {
+        window.scrollBy(0, ${centre - Math.round(height / 2)});
+        await new Promise(r => setTimeout(r, 500));
+        return 1;
+      }`,
+    );
+    aim = await at();
+  }
+
+  /* Aim at the row's own centre, clamped inside the window. */
+  const y = Math.min(
+    height - 8,
+    Math.max(8, aim.moverTop + Math.round(aim.moverHeight / 2)),
+  );
   const touch = (type, x) =>
     call("Input.dispatchTouchEvent", {
       type,
       touchPoints: type === "touchEnd" ? [] : [{ x, y }],
     });
 
-  /** One drag, sampled while the finger is still down. */
+  /** One drag, sampled while the finger is still down.
+
+      Two constraints on where the finger may be. It has to stay INSIDE the
+      window: `--distance` defaults to 2.5x the width, so an unclamped stroke
+      walks the touch point to x = -618 in a 375 window — a library reading its
+      own deltas still follows it, but the browser's own scroller gets nothing
+      and a perfectly good native row is reported dead. And it has to stay off
+      the EDGES: a touch starting within ~15% of the left edge and travelling
+      right is claimed by Chrome as a back-navigation gesture, so a row that
+      scrolls back perfectly from mid-screen (400 → 228) reads as frozen
+      (400 → 400) when the same stroke starts at x=56. `EDGE` keeps both ends
+      of every stroke in the page's own territory; `--repeat` covers distance. */
+  const EDGE = Math.min(64, Math.round(width * 0.2));
   const stroke = async (from, dx) => {
     let worst = null;
-    await touch("touchStart", from);
+    const edge = (x) => Math.min(width - EDGE, Math.max(EDGE, x));
+    await touch("touchStart", edge(from));
     for (let i = 1; i <= steps; i++) {
-      await touch("touchMove", from + Math.round((dx * i) / steps));
+      await touch("touchMove", edge(from + Math.round((dx * i) / steps)));
       await new Promise((r) => setTimeout(r, 40));
       const s = await at();
       if (!worst || s.emptyRight > worst.emptyRight) worst = s;
@@ -392,7 +483,12 @@ async function drag(opts) {
   let overshoot = 0;
   let moved = false;
 
-  for (let i = 0; i < repeat; i++) {
+  /* Outward strokes also run until the row stops moving: with the finger
+     clamped inside the window one stroke covers at most ~255px at 375, so a
+     fixed three strokes stop 268px short of a 905px range and the flush check
+     then measures a row that simply has not arrived yet. */
+  let outward = rest;
+  for (let i = 0; i < repeat * 3; i++) {
     const { worst, settled } = await stroke(
       Math.round(width * 0.85),
       -distance,
@@ -400,22 +496,53 @@ async function drag(opts) {
     overshoot = Math.max(overshoot, worst.emptyRight);
     if (settled.lastRight !== rest.lastRight) moved = true;
     rows.push([`left ${i + 1} mid`, worst], [`left ${i + 1}`, settled]);
+    const stalled = Math.abs(settled.lastRight - outward.lastRight) <= 1;
+    outward = settled;
+    if (stalled) break;
   }
   const end = rows.at(-1)[1];
-  for (let i = 0; i < repeat; i++) {
-    const { worst, settled } = await stroke(Math.round(width * 0.15), distance);
+  /* Return strokes start at mid-screen, not at 15% of the width: Chrome's
+     left-edge back-navigation zone is wider than the 64px `EDGE` clamp, and a
+     stroke born inside it never reaches the page (measured: identical stroke
+     from x=56 leaves scrollLeft at 400, from x=169 it scrolls 400 → 228).
+     That also makes a return stroke shorter than an outward one — 142px
+     against 255px at 375 — so the way back is walked until the row stops
+     moving rather than for a fixed count, and only a stall short of the start
+     counts as a fault. */
+  let backMoved = false;
+  let before = end;
+  for (let i = 0; i < repeat * 3; i++) {
+    const { worst, settled } = await stroke(Math.round(width * 0.45), distance);
     rows.push([`right ${i + 1} mid`, worst], [`right ${i + 1}`, settled]);
+    /* A mandatory-snap row whose item is wider than half the window snaps back
+       to the same item after a short drag: the row DID follow the finger, it
+       just landed where it started. That is the platform, not a stuck flag. */
+    if (Math.abs(worst.firstLeft - before.firstLeft) > 4) backMoved = true;
+    const stalled = Math.abs(settled.firstLeft - before.firstLeft) <= 1;
+    before = settled;
+    if (stalled) break;
   }
   const back = rows.at(-1)[1];
 
   /* A row that eats vertical gestures is worse than a row that does not move:
-     the page stops scrolling wherever the reader's thumb happens to land. */
+     the page stops scrolling wherever the reader's thumb happens to land.
+
+     The swipe has to fit the window. A 40-tall strip sits near the top, so a
+     fixed 320px upward travel walks the finger to y = -10, the points are
+     dropped, and a page that scrolls perfectly reads as a row eating the
+     gesture (measured pageY 1307 → 1307 with the finger off screen). Swipe
+     whichever way has room, and expect the page to move that way. */
+  const roomUp = y - 8;
+  const roomDown = height - 8 - y;
+  const up = roomUp >= roomDown;
+  const travel = Math.max(80, Math.min(320, up ? roomUp : roomDown));
   await touch("touchStart", Math.round(width * 0.5));
   for (let i = 1; i <= steps; i++) {
+    const shift = Math.round((travel * i) / steps);
     await call("Input.dispatchTouchEvent", {
       type: "touchMove",
       touchPoints: [
-        { x: Math.round(width * 0.5), y: y - Math.round((320 * i) / steps) },
+        { x: Math.round(width * 0.5), y: up ? y - shift : y + shift },
       ],
     });
     await new Promise((r) => setTimeout(r, 30));
@@ -426,30 +553,52 @@ async function drag(opts) {
   close();
 
   const w = 14;
-  console.log(`row: ${rest.mover}  viewport ${width}×${height}`);
+  console.log(
+    `row: ${rest.mover}  viewport ${width}×${height}  finger y=${y} (row ${aim.moverTop}..${aim.moverTop + aim.moverHeight})`,
+  );
   for (const [label, s] of rows) {
     console.log(
-      `${label.padEnd(w)} first ${String(s.firstLeft).padStart(6)}  last ${String(s.lastRight).padStart(6)}  empty right ${String(s.emptyRight).padStart(5)}`,
+      `${label.padEnd(w)} first ${String(s.firstLeft).padStart(6)}  last ${String(s.lastRight).padStart(6)}  empty right ${String(s.emptyRight).padStart(5)}  scrollLeft ${String(s.scrollLeft).padStart(5)}  tx ${String(s.tx).padStart(5)}`,
     );
   }
 
   const problems = [];
-  if (!moved) problems.push("a real touch drag does not move the row at all");
-  if (overshoot > 1)
+  /* Both of these are measured against the row's own right edge, not the
+     window's: a contained scroller is supposed to stop at the site margin. */
+  const inset = rest.insetRight;
+  const band = overshoot - Math.max(0, end.emptyRight);
+  const short = end.emptyRight - inset - rest.padEnd;
+  /* A marquee answers none of the drag questions: it is meant to run past the
+     window forever and it owns its own position. All that matters is that it
+     travels and that a thumb over it still scrolls the page. */
+  const marquee = rest.animated;
+  if (marquee) {
     problems.push(
-      `dragging past the end opens ${overshoot}px of empty section (rubber-band). Swiper: \`resistanceRatio: 0\` — NOT \`resistance: false\`, which removes the damping instead of the travel`,
+      ...(rest.firstLeft === end.firstLeft
+        ? ["the row carries an animation but its items never move"]
+        : []),
     );
-  if (Math.abs(end.emptyRight) > 1)
+  } else {
+    if (!moved) problems.push("a real touch drag does not move the row at all");
+    if (band > 1)
+      problems.push(
+        `dragging past the end opens ${band}px of empty section (rubber-band). Swiper: \`resistanceRatio: 0\` — NOT \`resistance: false\`, which removes the damping instead of the travel`,
+      );
+    if (Math.abs(short) > 4)
+      problems.push(
+        `the last item stops ${short}px from where the row ends (empty right ${end.emptyRight}, row inset ${inset}) — the row's own model of its width is wrong (a CSS \`gap\` a library cannot see is the usual cause)`,
+      );
+    if (!backMoved)
+      problems.push(
+        `dragging back does not move the row at all (${rest.firstLeft} → ${back.firstLeft}) — a stuck animating flag is the usual cause`,
+      );
+  }
+  const scrolled = up
+    ? afterVertical.scrollY > rest.scrollY
+    : afterVertical.scrollY < rest.scrollY;
+  if (!scrolled)
     problems.push(
-      `the last item stops ${end.emptyRight}px from the edge — the row's own model of its width is wrong (a CSS \`gap\` a library cannot see is the usual cause)`,
-    );
-  if (Math.abs(back.firstLeft - rest.firstLeft) > 1)
-    problems.push(
-      `dragging back does not return the row to its start (${rest.firstLeft} → ${back.firstLeft}) — a stuck animating flag is the usual cause`,
-    );
-  if (afterVertical.scrollY <= rest.scrollY)
-    problems.push(
-      "a vertical swipe over the row does not scroll the page — the row is claiming the gesture (`touch-action: pan-y`)",
+      `a vertical swipe over the row does not scroll the page (${rest.scrollY} → ${afterVertical.scrollY}, swiped ${up ? "up" : "down"} ${travel}) — the row is claiming the gesture (\`touch-action: pan-y\`)`,
     );
 
   console.log(
@@ -458,6 +607,187 @@ async function drag(opts) {
       : `\nDrag is sound: it moves, it stops flush at both ends with no empty strip mid-gesture, it returns, and the page still scrolls through it.`,
   );
   process.exit(problems.length ? 1 : 0);
+}
+
+/* ── proportions ──────────────────────────────────────────────────────────── */
+
+/* Reads the page at one narrow width and returns every disproportion it can
+   measure. Written as one in-page function because each check needs the same
+   walk, and because the interesting ones need to move the page (scroll a row
+   to both ends) or the pointer (hover a card) before they can be read. */
+const PROPORTIONS_READ = ({ tall, measure, tap }) => `async () => {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const name = (el) => String(el.className || el.tagName).trim().slice(0, 44) || el.tagName;
+  const box = (el) => el.getBoundingClientRect();
+  const out = { crop: [], tallMedia: [], rows: [], stacking: [], taps: [], measure: [] };
+
+  /* 1. A window that stopped cropping. \`aspect-ratio\` on the window plus a
+        percentage height on the image is indefinite: the photo's own ratio
+        wins and the box grows. Costs 238px on a portrait export. */
+  for (const img of document.images) {
+    const p = img.parentElement;
+    if (!p) continue;
+    const ar = getComputedStyle(p).aspectRatio;
+    const m = ar && ar.match(/([\\d.]+)\\s*\\/\\s*([\\d.]+)/);
+    if (!m) continue;
+    const r = box(p);
+    const want = r.width * (Number(m[2]) / Number(m[1]));
+    if (Math.abs(r.height - want) > 1.5) {
+      out.crop.push({ el: name(p), ratio: ar, width: Math.round(r.width), height: Math.round(r.height), expected: Math.round(want) });
+    }
+  }
+
+  /* 2. A photo that eats the window. The frame's portrait crop at container
+        width is half a screen on a phone; the window has to crop wider. */
+  for (const img of document.images) {
+    const r = box(img.parentElement ?? img);
+    if (r.width < innerWidth * 0.6) continue;
+    const share = r.height / innerHeight;
+    if (share > ${tall}) {
+      out.tallMedia.push({ el: name(img.parentElement ?? img), height: Math.round(r.height), share: +share.toFixed(2) });
+    }
+  }
+
+  /* 3. A scroll row's two ends. Measured at both extremes, because the fault
+        is asymmetry: inset at the start, flush against the glass at the end. */
+  for (const el of document.querySelectorAll("*")) {
+    const cs = getComputedStyle(el);
+    if (!/auto|scroll/.test(cs.overflowX)) continue;
+    if (el.scrollWidth - el.clientWidth < 8) continue;
+    const items = [...el.children].filter((c) => box(c).width > 0);
+    if (items.length < 2) continue;
+    const keep = el.scrollLeft;
+    el.scrollLeft = 0;
+    await wait(120);
+    const start = box(items[0]).left - box(el).left;
+    el.scrollLeft = el.scrollWidth;
+    await wait(220);
+    const end = box(el).right - box(items.at(-1)).right;
+    el.scrollLeft = keep;
+    out.rows.push({ el: name(el), startInset: Math.round(start), endInset: Math.round(end), snap: cs.scrollSnapType, scrollPadding: cs.scrollPaddingInlineStart + " / " + cs.scrollPaddingInlineEnd });
+  }
+
+  /* 4. A hover transform that paints over its own scrim. A scaled sibling
+        joins the transformed paint layer, which sits above every un-layered
+        sibling — the overlay disappears exactly while the reader looks at it.
+        Read out of the stylesheets, because a hover state cannot be measured
+        without one. */
+  const hoverTargets = new Set();
+  for (const sheet of document.styleSheets) {
+    let rules = [];
+    try { rules = [...sheet.cssRules]; } catch { continue; }
+    const walk = (list) => {
+      for (const rule of list) {
+        if (rule.cssRules) { walk([...rule.cssRules]); continue; }
+        if (!rule.selectorText || !rule.selectorText.includes(":hover")) continue;
+        const style = rule.style;
+        if (!(style.scale || style.transform || style.translate)) continue;
+        for (const part of rule.selectorText.split(",")) {
+          const plain = part.replace(/:hover/g, "").trim();
+          if (!plain) continue;
+          try { document.querySelectorAll(plain).forEach((el) => hoverTargets.add(el)); } catch {}
+        }
+      }
+    };
+    walk(rules);
+  }
+  for (const el of hoverTargets) {
+    if (getComputedStyle(el).zIndex !== "auto") continue;
+    for (const sib of [...(el.parentElement?.children ?? [])]) {
+      if (sib === el) continue;
+      const scs = getComputedStyle(sib);
+      if (!/gradient/.test(scs.backgroundImage)) continue;
+      if (scs.zIndex !== "auto") continue;
+      out.stacking.push({ transformed: name(el), scrim: name(sib) });
+    }
+  }
+
+  /* 5. A control smaller than a fingertip. A visually hidden control — the
+        1x1 sr-only submit every accessible form carries — is not a tap
+        target, so it is skipped rather than reported forever. */
+  for (const el of document.querySelectorAll("a, button, input, select, textarea, [role=button]")) {
+    const r = box(el);
+    if (!r.width || !r.height) continue;
+    if (el.closest("[aria-hidden=true]")) continue;
+    const cs = getComputedStyle(el);
+    const hidden = (r.width <= 2 && r.height <= 2) || cs.clipPath !== "none" || cs.clip !== "auto";
+    if (hidden) continue;
+    if (r.height >= ${tap} || r.width >= ${tap}) continue;
+    out.taps.push({ el: name(el), width: Math.round(r.width), height: Math.round(r.height) });
+  }
+
+  /* 6. A line of text too long to read. Measured off the text itself, not its
+        box: a one-word label in a 686-wide block is not an 114-character
+        line, and reporting it as one buries the real finding. Only a block
+        whose text actually fills its box counts. */
+  const range = document.createRange();
+  for (const el of document.querySelectorAll("p, li, h1, h2, h3, h4, h5, h6")) {
+    if (!el.textContent.trim()) continue;
+    const r = box(el);
+    if (r.width < 40) continue;
+    range.selectNodeContents(el);
+    const text = range.getBoundingClientRect().width;
+    if (text < r.width * 0.9) continue;
+    const cs = getComputedStyle(el);
+    const ch = r.width / (parseFloat(cs.fontSize) * 0.5);
+    if (ch > ${measure}) out.measure.push({ el: name(el), width: Math.round(r.width), ch: Math.round(ch) });
+  }
+
+  return out;
+}`;
+
+async function proportions(opts) {
+  const widths = String(opts.widths ?? "1024,834,768,640,480,375,320")
+    .split(",")
+    .map((n) => Number(n.trim()))
+    .filter(Boolean);
+  const read = PROPORTIONS_READ({
+    tall: Number(opts.tall ?? 0.6),
+    measure: Number(opts.measure ?? 100),
+    tap: Number(opts.tap ?? 40),
+  });
+  const { call, close } = await browser();
+  let failed = 0;
+  for (const w of widths) {
+    await open(call, {
+      route: opts.route ?? "/",
+      width: w,
+      height: Number(opts.height ?? 812),
+      touch: w < 1024,
+      reduce: opts.reduce,
+    });
+    const r = await evaluate(call, read);
+    const lines = [];
+    for (const c of r.crop)
+      lines.push(`crop defeated   ${c.el} is ${c.width}x${c.height}, its own ${c.ratio} wants ${c.expected} — the image is sizing the window`);
+    for (const t of r.tallMedia)
+      lines.push(`media too tall  ${t.el} is ${t.height} = ${Math.round(t.share * 100)}% of the window — crop wider at this width`);
+    for (const row of r.rows) {
+      if (Math.abs(row.startInset - row.endInset) > 4)
+        lines.push(`row lopsided    ${row.el} starts ${row.startInset} from its edge and ends ${row.endInset} — one end is glued to the glass (padding-inline + scroll-padding-inline on the scroller)`);
+    }
+    for (const s of r.stacking)
+      lines.push(`scrim outranked ${s.transformed} scales on hover with z-index auto, so it paints over ${s.scrim} — order them explicitly`);
+    for (const t of r.taps)
+      lines.push(`tap target      ${t.el} is ${t.width}x${t.height}`);
+    for (const m of r.measure)
+      lines.push(`line too long   ${m.el} runs ${m.ch}ch (${m.width}px)`);
+    failed += lines.length;
+    console.log(
+      `\n${String(w).padStart(5)}  ${lines.length ? `${lines.length} finding(s)` : "proportional"}` +
+        (r.rows.length
+          ? `\n       rows: ${r.rows.map((row) => `${row.el} ${row.startInset}/${row.endInset}`).join(", ")}`
+          : ""),
+    );
+    for (const line of lines) console.log(`       ${line}`);
+  }
+  close();
+  console.log(
+    failed
+      ? `\n${failed} finding(s) across ${widths.length} width(s). The design never drew these widths — every number above is still a decision someone has to make on purpose.`
+      : `\nProportional at every audited width: every crop window holds its ratio, no photo takes more than its share of the screen, both ends of every scroll row match, no hover transform outranks a scrim, every control is thumb-sized and no line runs long.`,
+  );
+  process.exit(failed ? 1 : 0);
 }
 
 /* ── eval ─────────────────────────────────────────────────────────────────── */
@@ -488,11 +818,13 @@ if (opts.help || !cmd || cmd === "--help" || cmd === "-h") {
   console.log(
     readFileSync(new URL(import.meta.url))
       .toString()
-      .slice(0, 2600),
+      .slice(0, 3400),
   );
   process.exit(0);
 }
 if (cmd === "overflow") await overflow(opts);
 else if (cmd === "drag") await drag(opts);
+else if (cmd === "proportions") await proportions(opts);
 else if (cmd === "eval") await evalCmd(opts);
-else die(`unknown command: ${cmd}. Try overflow, drag or eval.`);
+else
+  die(`unknown command: ${cmd}. Try overflow, drag, proportions or eval.`);
