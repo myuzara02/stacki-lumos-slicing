@@ -18,16 +18,28 @@ So the rule the skill is built around is:
 
 ## Install
 
-Drop the folder into a project's skills directory:
+Install it **once, at user level** — then every project has it, and no project
+repo ever carries a copy:
 
 ```bash
 git clone https://github.com/myuzara02/stacki-lumos-slicing \
-  .claude/skills/stacki-lumos-slicing
+  ~/.claude/skills/stacki-lumos-slicing
 ```
+
+That placement is the whole point when the work is a client repo: the skill is
+personal and keeps its own history here, while the project it slices pushes
+somewhere else. Update it with
+`git -C ~/.claude/skills/stacki-lumos-slicing pull`, and commit a lesson back
+to it rather than into the project.
 
 In Claude Code it then loads on its own, or with `/stacki-lumos-slicing`. Any other assistant can be pointed at `SKILL.md` directly — the workflow is plain markdown and the script is plain Node.
 
-Then add a line to the project's `AGENTS.md` / `CLAUDE.md` skills list so it is discoverable in a fresh session.
+A project's own `.claude/skills/stacki-lumos-slicing` also works and **takes
+precedence** over the user-level copy — so vendor it only where that repo is
+allowed to hold it, and where it is not, ignore the path so a stale copy can
+never shadow this one.
+
+Either way, add a line to the project's `AGENTS.md` / `CLAUDE.md` skills list so it is discoverable in a fresh session.
 
 ## Requirements
 
