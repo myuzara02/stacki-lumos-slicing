@@ -34,7 +34,7 @@ Then add a line to the project's `AGENTS.md` / `CLAUDE.md` skills list so it is 
 - **Node 22+** — `probe.mjs` uses the global `WebSocket` and `fetch`, and has **no dependencies**.
 - **Chrome, Chromium or Edge** installed. The script drives a headless instance over CDP.
 - A **dev server running** on `http://localhost:4321` (override with `LUMOS_BASE`).
-- The bundled Lumos skills, which this one orchestrates rather than duplicates: `lumos-import-figma` (measurements → tokens, `convert.mjs`) and `lumos-import-figma` (measurements → tokens, `convert.mjs`), which ships with every Lumos for Astro scaffold. The overlay does not ship with the scaffold, so `overlay-figma.mjs` lives here and the skill works in a bare project.
+- **`lumos-import-figma`**, which ships with every Lumos for Astro scaffold and owns measurements → tokens (`convert.mjs`). The overlay does _not_ ship with the scaffold, so `overlay-figma.mjs` lives in this repo and the skill works in a bare project.
 
 ## probe.mjs
 
